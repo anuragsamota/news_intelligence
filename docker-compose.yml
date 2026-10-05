@@ -1,0 +1,58 @@
+# Ollama + News Intelligence.
+#
+#   docker compose up -d ollama ollama-pull          # start Ollama and pull the models once
+#   docker compose run --rm news-intelligence status
+#   docker compose run --rm news-intelligence research "your question" -o /reports/report.md
+#
+# Models are set in .env (NI_LLM_MODEL / NI_EMBEDDING_MODEL).
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    environment:
+      OLLAMA_NUM_PARALLEL: "2"
+      OLLAMA_KEEP_ALIVE: "30m"
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    # Uncomment for NVIDIA GPUs:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices: [{ driver: nvidia, count: all, capabilities: [gpu] }]
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - ollama pull "${NI_LLM_MODEL:-qwen2.5:7b}" && ollama pull "${NI_EMBEDDING_MODEL:-nomic-embed-text}"
+    restart: "no"
+
+  news-intelligence:
+    build: .
+    depends_on:
+      ollama:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    volumes:
+      - data:/data
+      - ./reports:/reports
+
+volumes:
+  ollama:
+  data:
